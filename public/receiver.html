@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Receiver</title>
+
+    <style>
+      canvas {
+        width: 640px;
+        height: 480px;
+        border: 2px solid black;
+        margin: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      let videoDecoder;
+
+      const initWebSocket = async () => {
+        try {
+          const socket = new WebSocket('ws://localhost:3000');
+
+          socket.binaryType = 'arraybuffer';
+
+          socket.onmessage = event => {
+            const encodedData = event.data;
+            decodeFrame(encodedData);
+          };
+          
+          socket.onerror = error => console.error('websocket error', error);
+        } catch (error) {
+          console.error('failed to initialize connection', error);
+        }
+      };
+
+      const initDecoder = () => {
+        videoDecoder = new VideoDecoder({
+          output: (videoFrame) => {
+            ctx.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
+            videoFrame.close();
+          },
+          error: (error) => console.error('decoding error', error)
+        });
+
+        videoDecoder.configure({
+          codec: 'vp8',
+          width: 640,
+          height: 480
+        });
+      };
+
+      const decodeFrame = (encodedData) => {
+        const chunk = new EncodedVideoChunk({
+          type: 'key',
+          timestamp: performance.now(),
+          data: new Uint8Array(encodedData)
+        });
+
+        videoDecoder.decode(chunk);
+      };
+
+      initDecoder();
+      initWebSocket();
+    </script>
+  </body>
+</html>

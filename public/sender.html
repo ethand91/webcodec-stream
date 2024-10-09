@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Sender</title>
+    <style>
+      video, canvas {
+        width: 640px;
+        height: 480px;
+        border: 2px solid black;
+        margin: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <script>
+      const videoElement = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      let videoEncoder;
+      let socket;
+
+      const initWebSocket = () => {
+        socket = new WebSocket('ws://localhost:3000');
+
+        socket.onopen = () => {
+          console.log('socket connected');
+        };
+
+        socket.onerror = error => console.error('socket error', error);
+      };
+
+      const initEncoder = () => {
+        videoEncoder = new VideoEncoder({
+          output: (encodedChunk) => {
+            const chunkData = new Uint8Array(encodedChunk.byteLength);
+            encodedChunk.copyTo(chunkData);
+
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(chunkData.buffer);
+            }
+          },
+          error: (error) => console.error('Encoding error:', error)
+        });
+
+        videoEncoder.configure({
+          codec: 'vp8',
+          width: 640,
+          height: 480,
+          bitrate: 1_000_000,
+          framerate: 30
+        });
+      };
+
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then((stream) => {
+          videoElement.srcObject = stream;
+
+          const videoTrack = stream.getVideoTracks()[0];
+          const processor = new MediaStreamTrackProcessor(videoTrack);
+          const reader = processor.readable.getReader();
+
+          const processFrames = async () => {
+            while (true) {
+              const { value: videoFrame, done } = await reader.read();
+
+              if (done) break;
+
+              ctx.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
+
+              videoEncoder.encode(videoFrame, { keyFrame: true });
+              videoFrame.close();
+            }
+          };
+
+          processFrames();
+        })
+        .catch((error) => console.error('Failed to get camera', error));
+
+        initEncoder();
+        initWebSocket();
+    </script>
+  </body>
+</html>
